@@ -153,7 +153,14 @@ def main():
     ap.add_argument("--ntfy", default=os.environ.get("NTFY_TOPIC"),
                     help="ntfy.sh topic for phone push alerts")
     ap.add_argument("--once", action="store_true", help="check once and exit (exit 0 = stock found)")
+    ap.add_argument("--test-alert", action="store_true", help="send a test notification and exit")
     args = ap.parse_args()
+
+    if args.test_alert:
+        notify("duochecker test", "Alerts are working. You'll get one like this when an iPhone Duo is in stock.",
+               args.ntfy)
+        log("Sent test alert")
+        return
 
     log(f"Watching {len(args.parts)} models within {args.radius:g} mi of Apple store {args.store}"
         + (f", pushing to ntfy.sh/{args.ntfy}" if args.ntfy else ""))

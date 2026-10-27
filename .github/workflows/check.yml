@@ -5,12 +5,21 @@ on:
     - cron: "*/5 * * * *"  # GitHub's minimum; runs are often delayed a few minutes
   workflow_dispatch:
 
+concurrency:
+  group: duocheck
+
+env:
+  # Subscribe to this topic in the ntfy app. The repo is private, so it isn't public.
+  NTFY_TOPIC: duo-dc-faf6f779f5
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
+      - name: Send test alert (manual runs only)
+        if: github.event_name == 'workflow_dispatch'
+        run: python3 duochecker.py --test-alert
       - name: Check stock
-        env:
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python3 duochecker.py --once || true
