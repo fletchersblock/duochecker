@@ -136,7 +136,7 @@ def notify(title, body, ntfy_topic):
             subprocess.run(["osascript", "-e", script], check=False)
         elif system == "Linux":
             subprocess.run(["notify-send", "-u", "critical", title, body], check=False)
-    except FileNotFoundError:
+    except OSError:  # no notifier available (e.g. running on a phone); ntfy covers it
         pass
 
 
