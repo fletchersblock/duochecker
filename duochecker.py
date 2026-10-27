@@ -109,7 +109,7 @@ def store_distance(store):
 def check(parts, locations, radius):
     """Return {(part, store_number): alert} for every in-stock hit.
 
-    Each location is a ZIP (stores within `radius` of it) or "ZIP:Store Name" (just that store).
+    Each location is a ZIP (stores within `radius` of it) or "ZIP:Store,Store" (just those stores).
     """
     hits = {}
     for location in locations:
@@ -118,12 +118,14 @@ def check(parts, locations, radius):
     return hits
 
 
-def check_location(parts, zip_code, radius, only_store=""):
+def check_location(parts, zip_code, radius, only_stores=""):
     stores = fetch_stores(parts, zip_code)
-    if only_store:
-        nearby = [s for s in stores if s.get("storeName", "").lower() == only_store.lower()]
-        if not nearby:
-            log(f"  WARNING: no store named {only_store!r} near {zip_code} "
+    if only_stores:
+        wanted = {n.strip().lower() for n in only_stores.split(",") if n.strip()}
+        nearby = [s for s in stores if s.get("storeName", "").lower() in wanted]
+        missing = wanted - {s.get("storeName", "").lower() for s in nearby}
+        if missing:
+            log(f"  WARNING: no store named {', '.join(sorted(missing))} near {zip_code} "
                 f"(saw: {', '.join(s.get('storeName', '?') for s in stores)})")
     else:
         nearby = [s for s in stores if store_distance(s) <= radius]
@@ -141,7 +143,7 @@ def check_location(parts, zip_code, radius, only_store=""):
                     "phone": "".join(c for c in s.get("phoneNumber") or "" if c.isdigit() or c == "+"),
                 }
     names = ", ".join(s.get("storeName", "?") for s in nearby)
-    where = f"near {zip_code}" if only_store else f"within {radius:g} mi of {zip_code}"
+    where = f"near {zip_code}" if only_stores else f"within {radius:g} mi of {zip_code}"
     log(f"  {len(nearby)} stores {where} ({names}): "
         + (f"{len(hits)} in stock" if hits else "nothing in stock"))
     return hits
@@ -176,9 +178,9 @@ def notify(title, body, ntfy_topic, url=PRODUCT_URL, phone=""):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--zip", nargs="+", default=os.environ.get("DUO_ZIP", "20004 92009:Carlsbad").split(),
-                    help='ZIPs to watch; "ZIP:Store Name" watches only that store '
-                         '(default: 20004 92009:Carlsbad)')
+    ap.add_argument("--zip", nargs="+", default=os.environ.get("DUO_ZIP", "20004 92009:Carlsbad,UTC").split(),
+                    help='ZIPs to watch; "ZIP:Store,Store" watches only those stores '
+                         '(default: 20004 92009:Carlsbad,UTC)')
     ap.add_argument("--radius", type=float, default=float(os.environ.get("DUO_RADIUS", 30)),
                     help="miles from each plain ZIP (default 30)")
     ap.add_argument("--interval", type=int, default=int(os.environ.get("DUO_INTERVAL", 60)),
