@@ -34,6 +34,15 @@ PARTS = {
 
 ENDPOINT = "https://www.apple.com/shop/retail/pickup-message"
 PRODUCT_URL = "https://www.apple.com/shop/buy-iphone/iphone-duo"
+def buy_url(part):
+    """Buy page with color, storage and unlocked preselected (same format as iphone-duo-monitor)."""
+    name = PARTS.get(part)
+    if not name:
+        return f"https://www.apple.com/shop/product/{part}"  # Apple redirects to the buy page
+    color, storage = name.rsplit(" ", 1)
+    return f"{PRODUCT_URL}/7.6-inch-display-{storage.lower()}-{color.lower().replace(' ', '-')}-unlocked"
+
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -107,24 +116,31 @@ def check(parts, zip_code, radius):
             if part in parts and avail.get("pickupDisplay") == "available":
                 quote = (avail.get("messageTypes", {}).get("regular", {}).get("storePickupQuote")
                          or avail.get("pickupSearchQuote") or "Available")
-                hits[(part, s.get("storeNumber"))] = (
-                    f"{PARTS.get(part, part)} at Apple {s.get('storeName')} "
-                    f"({s.get('storeDistanceWithUnit') or s.get('city', '?')}): {quote}")
+                hits[(part, s.get("storeNumber"))] = {
+                    "title": f"{PARTS.get(part, part)} at Apple {s.get('storeName')}",
+                    "body": f"Pickup: {quote}\n{s.get('storeDistanceWithUnit') or s.get('city', '')}\n"
+                            "Tap to buy - these sell out in minutes.",
+                    "url": buy_url(part),
+                    "phone": "".join(c for c in s.get("phoneNumber") or "" if c.isdigit() or c == "+"),
+                }
     names = ", ".join(s.get("storeName", "?") for s in nearby)
     log(f"  {len(nearby)} stores within {radius:g} mi ({names}): "
         + (f"{len(hits)} in stock" if hits else "nothing in stock"))
     return hits
 
 
-def notify(title, body, ntfy_topic):
+def notify(title, body, ntfy_topic, url=PRODUCT_URL, phone=""):
     print("\a", end="", flush=True)
     if ntfy_topic:
+        actions = [f"view, Buy now, {url}"]
+        if phone:
+            actions.append(f"view, Call store, tel:{phone}")
         try:
             req = urllib.request.Request(
                 f"https://ntfy.sh/{ntfy_topic}",
                 data=body.encode(),
                 headers={"Title": title, "Priority": "urgent", "Tags": "iphone,rotating_light",
-                         "Click": PRODUCT_URL},
+                         "Click": url, "Actions": "; ".join(actions)},
             )
             urllib.request.urlopen(req, timeout=15).close()
         except urllib.error.URLError as e:
@@ -158,8 +174,8 @@ def main():
     args = ap.parse_args()
 
     if args.test_alert:
-        notify("duochecker test", "Alerts are working. You'll get one like this when an iPhone Duo is in stock.",
-               args.ntfy)
+        notify("duochecker test", "Alerts are working. Tap to open the Night Sky 256GB buy page, "
+               "the way a real alert opens the model that's in stock.", args.ntfy, buy_url("MK1F4LL/A"))
         log("Sent test alert")
         return
 
@@ -188,10 +204,9 @@ def main():
             time.sleep(args.interval)
             continue
         new = {k: v for k, v in hits.items() if k not in seen}
-        if new:
-            body = "\n".join(new.values())
-            log("*** IN STOCK ***\n" + body)
-            notify("iPhone Duo in stock!", body, args.ntfy)
+        for hit in new.values():  # one alert per listing, each linking to its own model
+            log(f"*** IN STOCK *** {hit['title']}")
+            notify(hit["title"], hit["body"], args.ntfy, hit["url"], hit["phone"])
         seen = hits  # forget stores that sold out, so a restock alerts again
         if args.once:
             sys.exit(0 if hits else 1)
