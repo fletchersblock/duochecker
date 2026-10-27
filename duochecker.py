@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Watch Apple Store in-store pickup availability for iPhone Duo near a ZIP code.
+"""Watch Apple Store in-store pickup availability for iPhone Duo near Washington, DC (20004).
 
 Polls Apple's pickup endpoint (the same one apple.com uses for "Check availability")
 and sends an alert the moment any configured model shows up at a store in range.
@@ -19,7 +19,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
-# US (LL/A) iPhone Duo part numbers.
+# US (LL/A) iPhone Duo part numbers (match drallgood/inventory-checker-app's scraped catalog).
 PARTS = {
     "MK1E4LL/A": "Star White 256GB",
     "MK1G4LL/A": "Star White 512GB",
@@ -35,11 +35,10 @@ ENDPOINT = "https://www.apple.com/shop/fulfillment-messages"
 PRODUCT_URL = "https://www.apple.com/shop/buy-iphone/iphone-duo"
 HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
-        "(KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     ),
     "Accept": "application/json",
-    "Referer": PRODUCT_URL,
 }
 
 
@@ -47,20 +46,44 @@ def log(msg):
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
 
 
-def fetch_stores(part, zip_code):
-    query = urllib.parse.urlencode({
-        "fae": "true",
-        "pl": "true",
-        "mts.0": "regular",
-        "mts.1": "compact",
-        "parts.0": part,
-        "location": zip_code,
-        "searchNearby": "true",
-    })
-    req = urllib.request.Request(f"{ENDPOINT}?{query}", headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        data = json.load(resp)
-    return data.get("body", {}).get("content", {}).get("pickupMessage", {}).get("stores", [])
+class Throttled(Exception):
+    """Apple rate-limited or bot-flagged us; wait `seconds` before trying again."""
+
+    def __init__(self, reason, seconds):
+        super().__init__(reason)
+        self.seconds = seconds
+
+
+def retry_after(headers, default):
+    try:
+        return max(int(headers.get("Retry-After", "")), default)
+    except ValueError:
+        return default
+
+
+def fetch_stores(parts, store):
+    """One request for every part; Apple returns the store plus its nearby stores."""
+    params = [("fae", "true"), ("store", store), ("searchNearby", "true"), ("little", "false")]
+    params += [(f"parts.{i}", p) for i, p in enumerate(parts)]
+    params += [("mts.0", "regular"), ("mts.1", "sticky"), ("fts", "true")]
+    req = urllib.request.Request(f"{ENDPOINT}?{urllib.parse.urlencode(params)}", headers=HEADERS)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as e:
+        # 541 is Apple's bot-detection response; 429/503 are rate limits.
+        if e.code in (429, 503, 541):
+            raise Throttled(f"HTTP {e.code}", retry_after(e.headers, 60))
+        raise
+    if raw.lstrip().startswith(b"<"):
+        raise Throttled("got an HTML page instead of JSON (likely bot detection)", 60)
+    body = json.loads(raw).get("body", {})
+    if "stores" in body:
+        return body["stores"]
+    pickup = body.get("content", {}).get("pickupMessage", {})
+    if pickup.get("errorMessageKeys"):
+        log(f"  Apple returned errors: {', '.join(pickup['errorMessageKeys'])}")
+    return pickup.get("stores", [])
 
 
 def store_distance(store):
@@ -74,28 +97,22 @@ def store_distance(store):
             return float("inf")
 
 
-def check(parts, zip_code, radius):
+def check(parts, store, radius):
     """Return {(part, store_number): description} for every in-stock hit within radius."""
+    stores = fetch_stores(parts, store)
+    nearby = [s for s in stores if store_distance(s) <= radius]
     hits = {}
-    for part in parts:
-        try:
-            stores = fetch_stores(part, zip_code)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
-            log(f"  {PARTS.get(part, part)}: request failed ({e})")
-            continue
-        nearby = [s for s in stores if store_distance(s) <= radius]
-        found = []
-        for s in nearby:
-            avail = s.get("partsAvailability", {}).get(part, {})
-            if avail.get("pickupDisplay") == "available":
-                quote = avail.get("pickupSearchQuote", "Available")
-                desc = (f"{PARTS.get(part, part)} at Apple {s.get('storeName')} "
-                        f"({s.get('storeDistanceWithUnit', '?')}): {quote}")
-                hits[(part, s.get("storeNumber"))] = desc
-                found.append(s.get("storeName"))
-        status = f"IN STOCK at {', '.join(found)}" if found else "none"
-        log(f"  {PARTS.get(part, part)}: {status} ({len(nearby)} stores within {radius:g} mi)")
-        time.sleep(1)
+    for s in nearby:
+        for part, avail in s.get("partsAvailability", {}).items():
+            if part in parts and avail.get("pickupDisplay") == "available":
+                quote = (avail.get("messageTypes", {}).get("regular", {}).get("storePickupQuote")
+                         or avail.get("pickupSearchQuote") or "Available")
+                hits[(part, s.get("storeNumber"))] = (
+                    f"{PARTS.get(part, part)} at Apple {s.get('storeName')} "
+                    f"({s.get('storeDistanceWithUnit', '?')}): {quote}")
+    names = ", ".join(s.get("storeName", "?") for s in nearby)
+    log(f"  {len(nearby)} stores within {radius:g} mi ({names}): "
+        + (f"{len(hits)} in stock" if hits else "nothing in stock"))
     return hits
 
 
@@ -125,9 +142,10 @@ def notify(title, body, ntfy_topic):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--zip", default=os.environ.get("DUO_ZIP", "20004"))
+    ap.add_argument("--store", default=os.environ.get("DUO_STORE", "R516"),
+                    help="Apple Store to search around (default R516, Carnegie Library, next to 20004)")
     ap.add_argument("--radius", type=float, default=float(os.environ.get("DUO_RADIUS", 30)),
-                    help="miles (default 30)")
+                    help="miles from that store (default 30)")
     ap.add_argument("--interval", type=int, default=int(os.environ.get("DUO_INTERVAL", 60)),
                     help="seconds between checks (default 60)")
     ap.add_argument("--parts", nargs="+", default=list(PARTS),
@@ -137,13 +155,29 @@ def main():
     ap.add_argument("--once", action="store_true", help="check once and exit (exit 0 = stock found)")
     args = ap.parse_args()
 
-    log(f"Watching {len(args.parts)} models within {args.radius:g} mi of {args.zip}"
+    log(f"Watching {len(args.parts)} models within {args.radius:g} mi of Apple store {args.store}"
         + (f", pushing to ntfy.sh/{args.ntfy}" if args.ntfy else ""))
 
     seen = {}
+    backoff = 0
     while True:
         log("Checking...")
-        hits = check(args.parts, args.zip, args.radius)
+        try:
+            hits = check(args.parts, args.store, args.radius)
+            backoff = 0
+        except Throttled as e:
+            backoff = min(max(e.seconds, backoff * 2), 900)
+            log(f"  Apple is throttling us ({e}); pausing {backoff}s")
+            if args.once:
+                sys.exit(2)
+            time.sleep(backoff)
+            continue
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+            log(f"  request failed ({e})")
+            if args.once:
+                sys.exit(2)
+            time.sleep(args.interval)
+            continue
         new = {k: v for k, v in hits.items() if k not in seen}
         if new:
             body = "\n".join(new.values())
