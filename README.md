@@ -37,9 +37,7 @@ Options:
 | `--parts MK1F4LL/A ...` | all 8 | only watch some models (see `PARTS` in the script) |
 | `--once` | | check once and exit |
 
-## Or: GitHub Actions (no computer needed)
+## GitHub Actions: doesn't work
 
-`.github/workflows/check.yml` runs a check every ~5 minutes. Add a repo secret
-**NTFY_TOPIC** (Settings → Secrets and variables → Actions) with your topic name. It's slower
-than running locally, it re-alerts on every run while something is in stock, and Apple
-sometimes blocks cloud IPs. Disable the workflow once you have your phone.
+Apple returns HTTP 541 (its bot block) to GitHub's servers, so the workflow's schedule is off.
+A manual run still sends a test alert to the ntfy topic in `.github/workflows/check.yml`.

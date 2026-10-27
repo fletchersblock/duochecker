@@ -1,8 +1,8 @@
 name: Check iPhone Duo stock
 
+# The schedule is off: Apple answers GitHub's servers with HTTP 541 (bot block),
+# so scheduled runs only burn Actions minutes. Run the script from a home connection instead.
 on:
-  schedule:
-    - cron: "*/5 * * * *"  # GitHub's minimum; runs are often delayed a few minutes
   workflow_dispatch:
 
 concurrency:
