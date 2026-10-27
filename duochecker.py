@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Watch Apple Store in-store pickup availability for iPhone Duo near Washington, DC (20004).
 
-Polls Apple's pickup endpoint (the same one apple.com uses for "Check availability")
-and sends an alert the moment any configured model shows up at a store in range.
+Polls Apple's retail pickup endpoint (the one behind apple.com's "Check availability"),
+the same endpoint abkicks516/iphone-duo-monitor uses, and sends an alert the moment any
+configured model shows up at a store in range.
 
 Standard library only. Run `python3 duochecker.py --help` for options.
 """
@@ -31,7 +32,7 @@ PARTS = {
     "MK1R4LL/A": "Night Sky 2TB",
 }
 
-ENDPOINT = "https://www.apple.com/shop/fulfillment-messages"
+ENDPOINT = "https://www.apple.com/shop/retail/pickup-message"
 PRODUCT_URL = "https://www.apple.com/shop/buy-iphone/iphone-duo"
 HEADERS = {
     "User-Agent": (
@@ -61,11 +62,10 @@ def retry_after(headers, default):
         return default
 
 
-def fetch_stores(parts, store):
-    """One request for every part; Apple returns the store plus its nearby stores."""
-    params = [("fae", "true"), ("store", store), ("searchNearby", "true"), ("little", "false")]
+def fetch_stores(parts, zip_code):
+    """One request for every part; Apple returns the ~12 stores nearest the ZIP."""
+    params = [("pl", "true"), ("location", zip_code)]
     params += [(f"parts.{i}", p) for i, p in enumerate(parts)]
-    params += [("mts.0", "regular"), ("mts.1", "sticky"), ("fts", "true")]
     req = urllib.request.Request(f"{ENDPOINT}?{urllib.parse.urlencode(params)}", headers=HEADERS)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -94,12 +94,12 @@ def store_distance(store):
         try:
             return float(str(store.get("storeDistanceWithUnit", "")).split()[0].replace(",", ""))
         except (IndexError, ValueError):
-            return float("inf")
+            return 0.0  # no distance given; Apple only returns stores near the ZIP anyway
 
 
-def check(parts, store, radius):
+def check(parts, zip_code, radius):
     """Return {(part, store_number): description} for every in-stock hit within radius."""
-    stores = fetch_stores(parts, store)
+    stores = fetch_stores(parts, zip_code)
     nearby = [s for s in stores if store_distance(s) <= radius]
     hits = {}
     for s in nearby:
@@ -109,7 +109,7 @@ def check(parts, store, radius):
                          or avail.get("pickupSearchQuote") or "Available")
                 hits[(part, s.get("storeNumber"))] = (
                     f"{PARTS.get(part, part)} at Apple {s.get('storeName')} "
-                    f"({s.get('storeDistanceWithUnit', '?')}): {quote}")
+                    f"({s.get('storeDistanceWithUnit') or s.get('city', '?')}): {quote}")
     names = ", ".join(s.get("storeName", "?") for s in nearby)
     log(f"  {len(nearby)} stores within {radius:g} mi ({names}): "
         + (f"{len(hits)} in stock" if hits else "nothing in stock"))
@@ -142,10 +142,9 @@ def notify(title, body, ntfy_topic):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--store", default=os.environ.get("DUO_STORE", "R516"),
-                    help="Apple Store to search around (default R516, Carnegie Library, next to 20004)")
+    ap.add_argument("--zip", default=os.environ.get("DUO_ZIP", "20004"))
     ap.add_argument("--radius", type=float, default=float(os.environ.get("DUO_RADIUS", 30)),
-                    help="miles from that store (default 30)")
+                    help="miles from the ZIP (default 30)")
     ap.add_argument("--interval", type=int, default=int(os.environ.get("DUO_INTERVAL", 60)),
                     help="seconds between checks (default 60)")
     ap.add_argument("--parts", nargs="+", default=list(PARTS),
@@ -153,6 +152,8 @@ def main():
     ap.add_argument("--ntfy", default=os.environ.get("NTFY_TOPIC"),
                     help="ntfy.sh topic for phone push alerts")
     ap.add_argument("--once", action="store_true", help="check once and exit (exit 0 = stock found)")
+    ap.add_argument("--minutes", type=float, default=0,
+                    help="stop after this many minutes (default: run forever)")
     ap.add_argument("--test-alert", action="store_true", help="send a test notification and exit")
     args = ap.parse_args()
 
@@ -162,15 +163,16 @@ def main():
         log("Sent test alert")
         return
 
-    log(f"Watching {len(args.parts)} models within {args.radius:g} mi of Apple store {args.store}"
+    log(f"Watching {len(args.parts)} models within {args.radius:g} mi of {args.zip}"
         + (f", pushing to ntfy.sh/{args.ntfy}" if args.ntfy else ""))
 
+    deadline = time.time() + args.minutes * 60 if args.minutes else float("inf")
     seen = {}
     backoff = 0
-    while True:
+    while time.time() < deadline:
         log("Checking...")
         try:
-            hits = check(args.parts, args.store, args.radius)
+            hits = check(args.parts, args.zip, args.radius)
             backoff = 0
         except Throttled as e:
             backoff = min(max(e.seconds, backoff * 2), 900)

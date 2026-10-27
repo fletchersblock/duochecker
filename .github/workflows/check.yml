@@ -1,25 +1,33 @@
 name: Check iPhone Duo stock
 
-# The schedule is off: Apple answers GitHub's servers with HTTP 541 (bot block),
-# so scheduled runs only burn Actions minutes. Run the script from a home connection instead.
+# Private repo (2,000 free minutes/month): one check per run, every ~5 minutes.
+# Public repo (unlimited minutes): each run checks every 60s for ~5h40m, and the
+# schedule keeps the next run queued so there's no gap.
 on:
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 concurrency:
   group: duocheck
+  cancel-in-progress: false
 
 env:
-  # Subscribe to this topic in the ntfy app. The repo is private, so it isn't public.
-  NTFY_TOPIC: duo-dc-faf6f779f5
+  # Subscribe to this topic in the ntfy app.
+  NTFY_TOPIC: duo-dc-faf6f779f
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
-      - name: Send test alert (manual runs only)
-        if: github.event_name == 'workflow_dispatch'
-        run: python3 duochecker.py --test-alert
       - name: Check stock
-        run: python3 duochecker.py --once || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(gh api repos/${{ github.repository }} --jq .private)" = "true" ]; then
+            python3 -u duochecker.py --once || true
+          else
+            python3 -u duochecker.py --minutes 340
+          fi
