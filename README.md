@@ -5,11 +5,19 @@ within **30 miles of 20004** (downtown DC). It polls the same availability endpo
 uses for "Check availability at a store", for all 8 US models (Star White / Night Sky,
 256GB–2TB), in a single request per check.
 
-Request format, part numbers and throttling behavior follow
-[drallgood/inventory-checker-app](https://github.com/drallgood/inventory-checker-app), a macOS
-app that does the same thing. Searches are anchored on Apple Carnegie Library (`R516`), which is
-next to 20004, and distances are measured from it. If Apple flags the traffic (HTTP 541/429), the
-script backs off (60s, doubling up to 15 min) instead of hammering it.
+It uses Apple's `/shop/retail/pickup-message` endpoint, searched by ZIP, the same one
+[abkicks516/iphone-duo-monitor](https://github.com/abkicks516/iphone-duo-monitor) uses. Apple
+answers it from GitHub's servers, which it doesn't for `/shop/fulfillment-messages` (HTTP 541).
+If Apple does throttle it (HTTP 541/429), the script backs off (60s, doubling up to 15 min).
+
+## Runs on GitHub Actions (nothing to keep running)
+
+`.github/workflows/check.yml` checks automatically:
+
+- **Private repo:** once every ~5 minutes (GitHub often runs it late). Uses about 1 of the
+  2,000 free minutes per check, so the free minutes last about a week.
+- **Public repo:** every 60 seconds nonstop, free. Each run lasts ~5h40m and the next is queued
+  behind it. The ntfy topic in the workflow becomes visible to anyone.
 
 ## Get alerts on your phone (ntfy)
 
@@ -31,13 +39,9 @@ Options:
 
 | Flag | Default | |
 |---|---|---|
-| `--store` | `R516` | Apple Store to search around (Carnegie Library, DC) |
-| `--radius` | `30` | miles from that store |
+| `--zip` | `20004` | |
+| `--radius` | `30` | miles |
+| `--minutes` | forever | stop after this long |
 | `--interval` | `60` | seconds between checks |
 | `--parts MK1F4LL/A ...` | all 8 | only watch some models (see `PARTS` in the script) |
 | `--once` | | check once and exit |
-
-## GitHub Actions: doesn't work
-
-Apple returns HTTP 541 (its bot block) to GitHub's servers, so the workflow's schedule is off.
-A manual run still sends a test alert to the ntfy topic in `.github/workflows/check.yml`.
