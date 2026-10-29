@@ -1,7 +1,7 @@
 # duochecker
 
 Alerts you the moment an **iPhone Duo** is available for in-store pickup at an Apple Store
-within **30 miles of 20004** (downtown DC), plus **Apple Carlsbad and Apple UTC (San Diego), CA**. It polls the same availability endpoint apple.com
+within **30 miles of 20004** (downtown DC), plus **Apple Carlsbad and Apple UTC (San Diego), CA** and **Apple Quaker Bridge (Princeton), NJ**. It polls the same availability endpoint apple.com
 uses for "Check availability at a store", for all 8 US models (Star White / Night Sky,
 256GB–2TB), in a single request per check.
 
@@ -39,7 +39,7 @@ Options:
 
 | Flag | Default | |
 |---|---|---|
-| `--zip` | `20004 92009:Carlsbad,UTC` | ZIPs to watch; `ZIP:Store,Store` watches only those stores |
+| `--zip` | `20004 92009:Carlsbad,UTC "08648:Quaker Bridge"` | ZIPs to watch; `ZIP:Store,Store` watches only those stores |
 | `--radius` | `30` | miles |
 | `--minutes` | forever | stop after this long |
 | `--interval` | `60` | seconds between checks |
