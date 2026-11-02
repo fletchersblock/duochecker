@@ -179,10 +179,10 @@ def notify(title, body, ntfy_topic, url=PRODUCT_URL, phone=""):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     # Store names can contain spaces, so DUO_ZIP separates locations with ";".
-    default_zips = os.environ.get("DUO_ZIP", "20004;92009:Carlsbad,UTC;08648:Quaker Bridge").split(";")
+    default_zips = os.environ.get("DUO_ZIP", "20004;92009:Carlsbad,UTC").split(";")
     ap.add_argument("--zip", nargs="+", default=default_zips,
                     help='ZIPs to watch; "ZIP:Store,Store" watches only those stores (quote names '
-                         'with spaces). Default: 20004 (30 mi), Carlsbad, UTC, Quaker Bridge')
+                         'with spaces). Default: 20004 (30 mi), Carlsbad, UTC')
     ap.add_argument("--radius", type=float, default=float(os.environ.get("DUO_RADIUS", 30)),
                     help="miles from each plain ZIP (default 30)")
     ap.add_argument("--interval", type=int, default=int(os.environ.get("DUO_INTERVAL", 60)),
