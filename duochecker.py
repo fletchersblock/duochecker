@@ -150,8 +150,36 @@ def check_location(parts, zip_code, radius, only_stores=""):
     return hits
 
 
+def twilio_request(path, data=None):
+    sid = os.environ["TWILIO_ACCOUNT_SID"]
+    auth = base64.b64encode(f"{sid}:{os.environ.get('TWILIO_AUTH_TOKEN', '')}".encode()).decode()
+    req = urllib.request.Request(
+        f"https://api.twilio.com/2010-04-01/Accounts/{sid}/{path}",
+        data=urllib.parse.urlencode(data).encode() if data else None,
+        headers={"Authorization": f"Basic {auth}"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.load(resp)
+
+
+def report_twilio_delivery(message_sid, wait=60):
+    """Log whether Twilio's text actually reached the phone (carriers can block it after sending)."""
+    deadline = time.time() + wait
+    while True:
+        msg = twilio_request(f"Messages/{message_sid}.json")
+        if msg["status"] in ("delivered", "undelivered", "failed") or time.time() > deadline:
+            break
+        time.sleep(5)
+    log(f"Twilio delivery status: {msg['status']}"
+        + (f" (error {msg['error_code']}: {msg.get('error_message') or 'see twilio.com/docs/api/errors/' + str(msg['error_code'])})"
+           if msg.get("error_code") else ""))
+
+
 def send_sms(text):
-    """Text SMS_TO via Textbelt (TEXTBELT_KEY) or Twilio (TWILIO_*), if configured."""
+    """Text SMS_TO via Textbelt (TEXTBELT_KEY) or Twilio (TWILIO_*), if configured.
+
+    Returns Twilio's message SID when sent through Twilio.
+    """
     to = os.environ.get("SMS_TO", "").strip()
     if not to:
         return
@@ -167,15 +195,9 @@ def send_sms(text):
             elif "quotaRemaining" in result:
                 log(f"Texted alert ({result['quotaRemaining']} texts left on the Textbelt key)")
         elif env("TWILIO_ACCOUNT_SID"):
-            sid = env("TWILIO_ACCOUNT_SID")
-            auth = base64.b64encode(f"{sid}:{env('TWILIO_AUTH_TOKEN', '')}".encode()).decode()
-            req = urllib.request.Request(
-                f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
-                data=urllib.parse.urlencode({"To": to, "From": env("TWILIO_FROM", ""), "Body": text}).encode(),
-                headers={"Authorization": f"Basic {auth}"},
-            )
-            urllib.request.urlopen(req, timeout=15).close()
+            msg = twilio_request("Messages.json", {"To": to, "From": env("TWILIO_FROM", ""), "Body": text})
             log("Texted alert via Twilio")
+            return msg.get("sid")
         else:
             log("SMS_TO is set but neither TEXTBELT_KEY nor TWILIO_ACCOUNT_SID is; no text sent")
     except urllib.error.HTTPError as e:
@@ -203,7 +225,7 @@ def notify(title, body, ntfy_topic, url=PRODUCT_URL, phone=""):
         except urllib.error.URLError as e:
             log(f"ntfy push failed: {e}")
     # No link in the text: carriers often block links from unregistered senders.
-    send_sms(f"{title}. {body.splitlines()[0]}")
+    message_sid = send_sms(f"{title}. {body.splitlines()[0]}")
     system = platform.system()
     try:
         if system == "Darwin":
@@ -213,6 +235,7 @@ def notify(title, body, ntfy_topic, url=PRODUCT_URL, phone=""):
             subprocess.run(["notify-send", "-u", "critical", title, body], check=False)
     except OSError:  # no notifier available (e.g. running on a phone); ntfy covers it
         pass
+    return message_sid
 
 
 def main():
@@ -237,9 +260,15 @@ def main():
     args = ap.parse_args()
 
     if args.test_alert:
-        notify("duochecker test", "Alerts are working. Tap to open the Night Sky 256GB buy page, "
-               "the way a real alert opens the model that's in stock.", args.ntfy, buy_url("MK1F4LL/A"))
+        message_sid = notify("duochecker test", "Alerts are working. Tap to open the Night Sky 256GB "
+                             "buy page, the way a real alert opens the model that's in stock.",
+                             args.ntfy, buy_url("MK1F4LL/A"))
         log("Sent test alert")
+        if message_sid:
+            try:
+                report_twilio_delivery(message_sid)
+            except (urllib.error.URLError, json.JSONDecodeError, KeyError) as e:
+                log(f"couldn't check Twilio delivery: {e}")
         return
 
     log(f"Watching {len(args.parts)} models within {args.radius:g} mi of {', '.join(args.zip)}"
