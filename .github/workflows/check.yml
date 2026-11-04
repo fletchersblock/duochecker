@@ -15,6 +15,14 @@ concurrency:
 env:
   # Subscribe to this topic in the ntfy app.
   NTFY_TOPIC: duo-dc-faf6f779f
+  # Optional text messages. Set these as repo secrets (Settings > Secrets and variables >
+  # Actions) so the phone number and keys stay private: SMS_TO, plus TEXTBELT_KEY or
+  # TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM.
+  SMS_TO: ${{ secrets.SMS_TO }}
+  TEXTBELT_KEY: ${{ secrets.TEXTBELT_KEY }}
+  TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+  TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+  TWILIO_FROM: ${{ secrets.TWILIO_FROM }}
 
 jobs:
   check:

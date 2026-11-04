@@ -45,3 +45,15 @@ Options:
 | `--interval` | `60` | seconds between checks |
 | `--parts MK1F4LL/A ...` | all 8 | only watch some models (see `PARTS` in the script) |
 | `--once` | | check once and exit |
+
+## Text messages (optional)
+
+Alerts can also go out as a text. Add repo secrets under Settings → Secrets and variables →
+Actions:
+
+- `SMS_TO`: your number, e.g. `+12025550123`
+- Either `TEXTBELT_KEY` (buy one at textbelt.com; no sign-up approval) or `TWILIO_ACCOUNT_SID`,
+  `TWILIO_AUTH_TOKEN` and `TWILIO_FROM` (US numbers need Twilio's texting registration first).
+
+Texts name the model and store but leave out the buy link, because carriers often block links
+from unregistered senders. Running the workflow manually sends a test text.

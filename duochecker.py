@@ -9,6 +9,7 @@ Standard library only. Run `python3 duochecker.py --help` for options.
 """
 
 import argparse
+import base64
 import json
 import os
 import platform
@@ -149,6 +150,37 @@ def check_location(parts, zip_code, radius, only_stores=""):
     return hits
 
 
+def send_sms(text):
+    """Text SMS_TO via Textbelt (TEXTBELT_KEY) or Twilio (TWILIO_*), if configured."""
+    to = os.environ.get("SMS_TO", "").strip()
+    if not to:
+        return
+    env = os.environ.get
+    try:
+        if env("TEXTBELT_KEY"):
+            req = urllib.request.Request("https://textbelt.com/text", data=urllib.parse.urlencode(
+                {"phone": to, "message": text, "key": env("TEXTBELT_KEY")}).encode())
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                result = json.load(resp)
+            if not result.get("success"):
+                log(f"text message failed: {result.get('error')}")
+            elif "quotaRemaining" in result:
+                log(f"Texted alert ({result['quotaRemaining']} texts left on the Textbelt key)")
+        elif env("TWILIO_ACCOUNT_SID"):
+            sid = env("TWILIO_ACCOUNT_SID")
+            auth = base64.b64encode(f"{sid}:{env('TWILIO_AUTH_TOKEN', '')}".encode()).decode()
+            req = urllib.request.Request(
+                f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
+                data=urllib.parse.urlencode({"To": to, "From": env("TWILIO_FROM", ""), "Body": text}).encode(),
+                headers={"Authorization": f"Basic {auth}"},
+            )
+            urllib.request.urlopen(req, timeout=15).close()
+        else:
+            log("SMS_TO is set but neither TEXTBELT_KEY nor TWILIO_ACCOUNT_SID is; no text sent")
+    except (urllib.error.URLError, json.JSONDecodeError) as e:
+        log(f"text message failed: {e}")
+
+
 def notify(title, body, ntfy_topic, url=PRODUCT_URL, phone=""):
     print("\a", end="", flush=True)
     if ntfy_topic:
@@ -165,6 +197,8 @@ def notify(title, body, ntfy_topic, url=PRODUCT_URL, phone=""):
             urllib.request.urlopen(req, timeout=15).close()
         except urllib.error.URLError as e:
             log(f"ntfy push failed: {e}")
+    # No link in the text: carriers often block links from unregistered senders.
+    send_sms(f"{title}. {body.splitlines()[0]}")
     system = platform.system()
     try:
         if system == "Darwin":
