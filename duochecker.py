@@ -187,13 +187,15 @@ def notify(title, body, ntfy_topic, url=PRODUCT_URL, phone=""):
         actions = [f"view, Buy now, {url}"]
         if phone:
             actions.append(f"view, Call store, tel:{phone}")
+        headers = {"Title": title, "Priority": "urgent", "Tags": "iphone,rotating_light",
+                   "Click": url, "Actions": "; ".join(actions)}
+        # ntfy also emails the alert for free; a carrier address like 2025550123@vtext.com
+        # turns that into a text message.
+        if os.environ.get("ALERT_EMAIL", "").strip():
+            headers["Email"] = os.environ["ALERT_EMAIL"].strip()
         try:
-            req = urllib.request.Request(
-                f"https://ntfy.sh/{ntfy_topic}",
-                data=body.encode(),
-                headers={"Title": title, "Priority": "urgent", "Tags": "iphone,rotating_light",
-                         "Click": url, "Actions": "; ".join(actions)},
-            )
+            req = urllib.request.Request(f"https://ntfy.sh/{ntfy_topic}", data=body.encode(),
+                                         headers=headers)
             urllib.request.urlopen(req, timeout=15).close()
         except urllib.error.URLError as e:
             log(f"ntfy push failed: {e}")

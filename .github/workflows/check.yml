@@ -15,7 +15,9 @@ concurrency:
 env:
   # Subscribe to this topic in the ntfy app.
   NTFY_TOPIC: duo-dc-faf6f779f
-  # Optional text messages. Set these as repo secrets (Settings > Secrets and variables >
+  # Optional free email copy of each alert (via ntfy): set the ALERT_EMAIL repo secret.
+  ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+  # Optional paid text messages. Set these as repo secrets (Settings > Secrets and variables >
   # Actions) so the phone number and keys stay private: SMS_TO, plus TEXTBELT_KEY or
   # TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM.
   SMS_TO: ${{ secrets.SMS_TO }}

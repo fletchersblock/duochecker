@@ -46,7 +46,14 @@ Options:
 | `--parts MK1F4LL/A ...` | all 8 | only watch some models (see `PARTS` in the script) |
 | `--once` | | check once and exit |
 
-## Text messages (optional)
+## Email alerts (optional, free)
+
+Add a repo secret `ALERT_EMAIL` (Settings → Secrets and variables → Actions) and ntfy emails
+each alert there too, for free (ntfy.sh limits how many it forwards, roughly 16 an hour). On
+Verizon, `yournumber@vtext.com` delivers it as a text, while Verizon still supports that
+(announced to end March 2027). AT&T's and T-Mobile's email-to-text addresses no longer work.
+
+## Text messages (optional, paid)
 
 Alerts can also go out as a text. Add repo secrets under Settings → Secrets and variables →
 Actions:
