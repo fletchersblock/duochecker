@@ -175,8 +175,11 @@ def send_sms(text):
                 headers={"Authorization": f"Basic {auth}"},
             )
             urllib.request.urlopen(req, timeout=15).close()
+            log("Texted alert via Twilio")
         else:
             log("SMS_TO is set but neither TEXTBELT_KEY nor TWILIO_ACCOUNT_SID is; no text sent")
+    except urllib.error.HTTPError as e:
+        log(f"text message failed: {e} {e.read()[:300].decode(errors='replace')}")
     except (urllib.error.URLError, json.JSONDecodeError) as e:
         log(f"text message failed: {e}")
 

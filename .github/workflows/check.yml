@@ -27,14 +27,21 @@ env:
   TWILIO_FROM: ${{ secrets.TWILIO_FROM }}
 
 jobs:
+  # Its own job so its log (e.g. a text-message error) is readable right away.
+  test-alert:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send test alert
+        run: python3 duochecker.py --test-alert
+
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
-      - name: Send test alert (manual runs only)
-        if: github.event_name == 'workflow_dispatch'
-        run: python3 duochecker.py --test-alert
       - name: Check stock
         env:
           GH_TOKEN: ${{ github.token }}
